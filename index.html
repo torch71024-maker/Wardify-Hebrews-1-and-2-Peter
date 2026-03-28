@@ -1093,92 +1093,95 @@ function bgBlackRipples(c){
 }
 
 /* ══ Answer Judge — Crimson Blood ══ */
+/* ══ Answer Judge — Crimson Depths (lava pools, no ctx.filter) ══ */
 function bgCrimsonBlood(c){
-  let W,H; const ctx=initCanvas(c); W=c.width; H=c.height;
-  ctx.fillStyle='#0c0000'; ctx.fillRect(0,0,W,H);
+  let W,H,t=0; const ctx=initCanvas(c); W=c.width; H=c.height;
 
-  function catmull(pts,n){
-    const out=[],L=pts.length;
-    for(let i=0;i<n;i++){
-      const t=i/(n-1)*(L-1),idx=Math.min(Math.floor(t),L-2),f=t-idx;
-      const p0=pts[Math.max(0,idx-1)],p1=pts[idx],p2=pts[Math.min(L-1,idx+1)],p3=pts[Math.min(L-1,idx+2)];
-      out.push({
-        x:0.5*((2*p1.x)+(-p0.x+p2.x)*f+(2*p0.x-5*p1.x+4*p2.x-p3.x)*f*f+(-p0.x+3*p1.x-3*p2.x+p3.x)*f*f*f),
-        y:0.5*((2*p1.y)+(-p0.y+p2.y)*f+(2*p0.y-5*p1.y+4*p2.y-p3.y)*f*f+(-p0.y+3*p1.y-3*p2.y+p3.y)*f*f*f)
-      });
-    }
-    return out;
+  // Slow drifting crimson orbs — glow done with layered radial gradients, no ctx.filter
+  function mkOrb(){
+    return{
+      x:Math.random()*W, y:Math.random()*H,
+      r:(0.08+Math.random()*0.16)*Math.min(W,H),
+      vx:(Math.random()-.5)*0.12, vy:(Math.random()-.5)*0.08,
+      wanderA:Math.random()*Math.PI*2,
+      wanderSpd:0.00005+Math.random()*0.0001,
+      pPeriod:4000+Math.random()*8000, pOff:Math.random()*Math.PI*2,
+      hue:0+Math.random()*22,
+      baseAlpha:0.12+Math.random()*0.18,
+    };
   }
 
-  function mkStream(){
-    const cy=H*(0.1+Math.random()*0.8);
-    const nc=6+Math.floor(Math.random()*4);
-    const raw=[{x:-120,y:cy+(Math.random()-.5)*40}];
-    for(let i=1;i<=nc;i++) raw.push({x:W*i/nc+(Math.random()-.5)*W*.1,y:cy+(Math.random()-.5)*H*.3});
-    raw.push({x:W+120,y:raw[raw.length-1].y+(Math.random()-.5)*30});
-    const veins=[];
-    const nv=2+Math.floor(Math.random()*3);
-    const sw=18+Math.random()*28;
-    for(let v=0;v<nv;v++){
-      const side=(Math.random()-.5)*sw*2.5;
-      veins.push({
-        pts:catmull(raw.map(p=>({x:p.x+(Math.random()-.5)*50,y:p.y+side+(Math.random()-.5)*40})),700),
-        w:0.6+Math.random()*2,op:0.5+Math.random()*0.4,delay:Math.random()*.08,prog:0
-      });
-    }
-    return{pts:catmull(raw,700),sw,veins,prog:0,alpha:0,phase:'draw',hold:0,
-      drawSpd:0.00013+Math.random()*.0001,fadeSpd:0.0004+Math.random()*.0002};
+  // Rising embers — tiny, very lightweight
+  function mkEmber(){
+    return{
+      x:Math.random()*W, y:H+4,
+      vx:(Math.random()-.5)*0.6, vy:-(0.3+Math.random()*1.1),
+      life:1, decay:0.004+Math.random()*0.006,
+      r:0.6+Math.random()*1.8, hue:6+Math.floor(Math.random()*30),
+    };
   }
 
-  let streams=Array.from({length:3+Math.floor(Math.random()*2)},(_,i)=>({...mkStream(),_stagger:i*1800,_elapsed:0}));
+  const orbs=Array.from({length:10},mkOrb);
+  const embers=Array.from({length:55},()=>{const e=mkEmber();e.y=Math.random()*H;e.life=Math.random();return e;});
 
-  function strokePts(pts,end,lw,col,a){
-    if(end<2||a<=0)return;
-    ctx.save();ctx.globalAlpha=Math.max(0,a);ctx.strokeStyle=col;
-    ctx.lineWidth=lw;ctx.lineCap='round';ctx.lineJoin='round';
-    ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);
-    for(let i=1;i<end;i++)ctx.lineTo(pts[i].x,pts[i].y);
-    ctx.stroke();ctx.restore();
-  }
+  const stop=mkLoop(()=>{
+    t+=0.008;
+    // Near-opaque fill — trails look like slow lava
+    ctx.fillStyle='rgba(10,0,0,0.28)'; ctx.fillRect(0,0,W,H);
 
-  let lt=null;
-  const stop=mkLoop(ts=>{
-    const dt=lt?Math.min(ts-lt,80):16; lt=ts;
-    ctx.fillStyle='#0c0000'; ctx.fillRect(0,0,W,H);
-    for(const s of streams){
-      s._elapsed+=dt;
-      if(s._elapsed<s._stagger) continue;
-      if(s.phase==='draw'){
-        s.prog=Math.min(1,s.prog+dt*s.drawSpd);
-        s.alpha=Math.min(1,s.alpha+dt*.004);
-        for(const v of s.veins){if(s.prog>v.delay)v.prog=Math.min(1,(s.prog-v.delay)/(1-v.delay));}
-        if(s.prog>=1){s.phase='hold';s.hold=600+Math.random()*600;}
-      } else if(s.phase==='hold'){
-        s.hold-=dt; if(s.hold<=0)s.phase='fade';
-      } else if(s.phase==='fade'){
-        s.alpha=Math.max(0,s.alpha-dt*s.fadeSpd);
-        if(s.alpha<=0){const ns=mkStream();Object.assign(s,ns,{_stagger:0,_elapsed:9999});}
-      }
-      const end=Math.floor(s.prog*s.pts.length),a=s.alpha;
-      if(end<2||a<=0)continue;
-      ctx.save();ctx.globalAlpha=a*.15;ctx.strokeStyle='#4a0000';
-      ctx.lineWidth=s.sw*2.6;ctx.lineCap='round';ctx.filter='blur(9px)';
-      ctx.beginPath();ctx.moveTo(s.pts[0].x,s.pts[0].y);
-      for(let i=1;i<end;i++)ctx.lineTo(s.pts[i].x,s.pts[i].y);
-      ctx.stroke();ctx.filter='none';ctx.restore();
-      strokePts(s.pts,end,s.sw,     '#580a0a',a*.9);
-      strokePts(s.pts,end,s.sw*.6,  '#7a1212',a*.7);
-      strokePts(s.pts,end,s.sw*.25, '#921e1e',a*.4);
-      for(const v of s.veins){
-        const ve=Math.floor(v.prog*v.pts.length);
-        strokePts(v.pts,ve,v.w*1.5,'#0a0000',a*v.op*.45);
-        strokePts(v.pts,ve,v.w,    '#050000',a*v.op);
-      }
+    // Horizon heat glow at bottom
+    const hz=ctx.createLinearGradient(0,H*0.55,0,H);
+    hz.addColorStop(0,'rgba(0,0,0,0)');
+    hz.addColorStop(0.6,'rgba(100,8,0,0.18)');
+    hz.addColorStop(1,'rgba(80,4,0,0.38)');
+    ctx.fillStyle=hz; ctx.fillRect(0,0,W,H);
+
+    // Crimson orbs — layered radial gradients for soft glow, no blur API
+    ctx.globalCompositeOperation='screen';
+    for(const o of orbs){
+      o.wanderA+=(Math.random()-.5)*0.02;
+      o.x+=o.vx+Math.cos(o.wanderA)*o.wanderSpd*16;
+      o.y+=o.vy+Math.sin(o.wanderA)*o.wanderSpd*16;
+      if(o.x<-o.r*2) o.x=W+o.r; if(o.x>W+o.r*2) o.x=-o.r;
+      if(o.y<-o.r*2) o.y=H+o.r; if(o.y>H+o.r*2) o.y=-o.r;
+      const pulse=1+Math.sin(t*Math.PI*2000/o.pPeriod+o.pOff)*0.18;
+      const R=o.r*pulse;
+      // Outer soft halo
+      const g1=ctx.createRadialGradient(o.x,o.y,0,o.x,o.y,R*2.2);
+      g1.addColorStop(0,`hsla(${o.hue},90%,38%,${o.baseAlpha*0.6})`);
+      g1.addColorStop(0.5,`hsla(${o.hue+8},80%,28%,${o.baseAlpha*0.25})`);
+      g1.addColorStop(1,`hsla(${o.hue},70%,15%,0)`);
+      ctx.fillStyle=g1; ctx.beginPath(); ctx.arc(o.x,o.y,R*2.2,0,Math.PI*2); ctx.fill();
+      // Inner core
+      const g2=ctx.createRadialGradient(o.x,o.y,0,o.x,o.y,R);
+      g2.addColorStop(0,`hsla(${o.hue+10},95%,55%,${o.baseAlpha*1.5})`);
+      g2.addColorStop(0.4,`hsla(${o.hue},90%,38%,${o.baseAlpha})`);
+      g2.addColorStop(1,`hsla(${o.hue},80%,20%,0)`);
+      ctx.fillStyle=g2; ctx.beginPath(); ctx.arc(o.x,o.y,R,0,Math.PI*2); ctx.fill();
     }
-    // dark vignette
-    const vg=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*.75);
-    vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,0.65)');
-    ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+
+    // Embers
+    for(const e of embers){
+      e.x+=e.vx; e.y+=e.vy; e.life-=e.decay;
+      e.vx+=(Math.random()-.5)*0.06;
+      if(e.life<=0||e.y<-8) Object.assign(e,mkEmber());
+      const a=Math.max(0,e.life);
+      const g=ctx.createRadialGradient(e.x,e.y,0,e.x,e.y,e.r*4);
+      g.addColorStop(0,`hsla(${e.hue},100%,72%,${a*0.9})`);
+      g.addColorStop(0.3,`hsla(${e.hue+10},90%,50%,${a*0.3})`);
+      g.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(e.x,e.y,e.r*4,0,Math.PI*2); ctx.fill();
+      ctx.globalAlpha=a;
+      ctx.fillStyle=`hsl(${e.hue+20},100%,80%)`;
+      ctx.beginPath(); ctx.arc(e.x,e.y,e.r*Math.max(0.2,e.life),0,Math.PI*2); ctx.fill();
+      ctx.globalAlpha=1;
+    }
+    ctx.globalCompositeOperation='source-over';
+
+    // Vignette — drawn with two arcs, no extra fillRect overdraw
+    const vg=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*0.78);
+    vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.7)');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
   });
   const rmR=makeResizer(c,()=>{W=c.width;H=c.height;});
   return ()=>{ stop(); rmR(); };
